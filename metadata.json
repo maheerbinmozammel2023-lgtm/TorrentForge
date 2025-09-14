@@ -1,0 +1,5 @@
+{
+  "name": "TorrentForge",
+  "description": "A modern web application to create v1, v2, and hybrid torrent files. Add files from your local machine or the cloud, manage trackers, and customize torrent properties with an intuitive interface.",
+  "requestFramePermissions": []
+}
