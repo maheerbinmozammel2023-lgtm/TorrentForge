@@ -1,4 +1,3 @@
-
 export enum TorrentType {
   V1 = 'v1',
   V2 = 'v2',
@@ -11,7 +10,7 @@ export enum SourceType {
 }
 
 export interface TorrentInfo {
-  sourceFile?: File;
+  sourceFiles?: File[];
   sourceUrl: string;
   sourceType: SourceType;
   torrentType: TorrentType;

@@ -42,11 +42,11 @@ const ResultDisplay: React.FC<{ data: CreatedTorrentData; onDownload: () => void
             
             <dl className="divide-y divide-slate-700">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3">
-                    <dt className="text-slate-400 font-medium">File Name</dt>
+                    <dt className="text-slate-400 font-medium">Content Name</dt>
                     <dd className="text-white font-semibold mt-1 sm:mt-0">{data.fileName}</dd>
                 </div>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between py-3">
-                    <dt className="text-slate-400 font-medium">File Size</dt>
+                    <dt className="text-slate-400 font-medium">Total Size</dt>
                     <dd className="text-white mt-1 sm:mt-0">{data.fileSize}</dd>
                 </div>
                 {renderInfoHash("Info Hash (v1)", data.infoHashV1)}
@@ -105,6 +105,7 @@ export const TorrentCreator: React.FC = () => {
   const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [cloudFileInfo, setCloudFileInfo] = useState<{ name: string; size: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
 
   const handleAddTracker = () => {
@@ -128,17 +129,39 @@ export const TorrentCreator: React.FC = () => {
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setTorrentInfo(prev => ({ ...prev, sourceFile: e.target.files![0] }));
+    if (e.target.files && e.target.files.length > 0) {
+      setTorrentInfo(prev => ({ ...prev, sourceFiles: Array.from(e.target.files!) }));
       setError(null);
     }
   };
   
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        setTorrentInfo(prev => ({ ...prev, sourceFiles: Array.from(e.dataTransfer.files) }));
+        setError(null);
+    }
+  }, []);
+
   const handleSourceTypeChange = useCallback((newType: SourceType) => {
     setTorrentInfo(prev => ({
         ...prev,
         sourceType: newType,
-        sourceFile: newType === SourceType.Cloud ? undefined : prev.sourceFile,
+        sourceFiles: newType === SourceType.Cloud ? undefined : prev.sourceFiles,
         sourceUrl: newType === SourceType.Local ? '' : prev.sourceUrl,
     }));
     
@@ -193,26 +216,45 @@ export const TorrentCreator: React.FC = () => {
   
   const createMockTorrentData = useCallback((): CreatedTorrentData => {
       const isLocal = torrentInfo.sourceType === SourceType.Local;
-      const fileName = isLocal ? torrentInfo.sourceFile?.name : cloudFileInfo?.name;
-      const fileSize = isLocal ? torrentInfo.sourceFile?.size : cloudFileInfo?.size;
+      let fileName = "unknown_file";
+      let fileSizeNum = 0;
+
+      if (isLocal && torrentInfo.sourceFiles && torrentInfo.sourceFiles.length > 0) {
+          const files = torrentInfo.sourceFiles;
+          fileSizeNum = files.reduce((sum, f) => sum + f.size, 0);
+
+          if (files.length === 1) {
+              fileName = files[0].name;
+          } else {
+              const firstPath = files[0].webkitRelativePath;
+              if (firstPath) {
+                  fileName = firstPath.split('/')[0];
+              } else {
+                  fileName = `${files.length} files`;
+              }
+          }
+      } else if (!isLocal && cloudFileInfo) {
+          fileName = cloudFileInfo.name;
+          fileSizeNum = cloudFileInfo.size;
+      }
       
       const generateInfoHash = () => [...Array(40)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
 
       return {
           ...torrentInfo,
-          fileName: fileName || "unknown_file",
-          fileSize: fileSize ? (fileSize / 1024 / 1024).toFixed(2) + ' MB' : 'Unknown',
+          fileName: fileName,
+          fileSize: fileSizeNum ? (fileSizeNum / 1024 / 1024).toFixed(2) + ' MB' : 'Unknown',
           infoHashV1: [TorrentType.V1, TorrentType.Hybrid].includes(torrentInfo.torrentType) ? generateInfoHash() : undefined,
           infoHashV2: [TorrentType.V2, TorrentType.Hybrid].includes(torrentInfo.torrentType) ? generateInfoHash() : undefined,
           creationDate: new Date().toISOString(),
-          totalPieces: fileSize ? Math.ceil(fileSize / (1024 * parseInt(torrentInfo.pieceSize) || 1024*512)) : 0, // Approximate
+          totalPieces: fileSizeNum ? Math.ceil(fileSizeNum / (1024 * parseInt(torrentInfo.pieceSize) || 1024*512)) : 0, // Approximate
       };
   }, [torrentInfo, cloudFileInfo]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    if (torrentInfo.sourceType === SourceType.Local && !torrentInfo.sourceFile) {
-        setError('Please select a local file.');
+    if (torrentInfo.sourceType === SourceType.Local && (!torrentInfo.sourceFiles || torrentInfo.sourceFiles.length === 0)) {
+        setError('Please select one or more files, or a folder.');
         return;
     }
     if (torrentInfo.sourceType === SourceType.Cloud) {
@@ -268,7 +310,7 @@ Private: ${createdTorrentData.isPrivate}
     setCreatedTorrentData(null);
     setTorrentInfo(prev => ({
         ...prev,
-        sourceFile: undefined,
+        sourceFiles: undefined,
         sourceUrl: '',
     }));
     setCloudFileInfo(null);
@@ -276,8 +318,35 @@ Private: ${createdTorrentData.isPrivate}
   }
 
   const isFormValid =
-    (torrentInfo.sourceType === SourceType.Local && !!torrentInfo.sourceFile) ||
+    (torrentInfo.sourceType === SourceType.Local && !!torrentInfo.sourceFiles && torrentInfo.sourceFiles.length > 0) ||
     (torrentInfo.sourceType === SourceType.Cloud && !!cloudFileInfo);
+
+  const renderSelectedFiles = () => {
+    if (!torrentInfo.sourceFiles || torrentInfo.sourceFiles.length === 0) return null;
+
+    const files = torrentInfo.sourceFiles;
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    
+    let displayName = '';
+    if (files.length === 1) {
+        displayName = files[0].name;
+    } else {
+        const firstPath = files[0].webkitRelativePath;
+        if (firstPath) {
+            displayName = `Folder: ${firstPath.split('/')[0]}`;
+        } else {
+            displayName = `${files.length} files selected`;
+        }
+    }
+
+    return (
+        <div className="text-sm text-white pt-2 text-left">
+            <p className="font-semibold truncate">{displayName}</p>
+            {files.length > 1 && <p className="text-xs text-slate-400">{files.length} files</p>}
+            <p className="text-xs text-slate-400">Total size: {(totalSize / 1024 / 1024).toFixed(2)} MB</p>
+        </div>
+    )
+  }
 
   if (isLoading) {
     return (
@@ -309,22 +378,28 @@ Private: ${createdTorrentData.isPrivate}
             ))}
         </div>
         {torrentInfo.sourceType === SourceType.Local ? (
-            <div>
-                <label htmlFor="file-upload" className="block text-sm font-medium text-slate-400 mb-2">Select a file from your device</label>
-                <div className="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-600 border-dashed rounded-md">
+            <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+            >
+                <label className="block text-sm font-medium text-slate-400 mb-2">Select a folder or drag & drop files</label>
+                <div className={`mt-1 flex flex-col items-center justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${isDragging ? 'border-blue-500 bg-slate-800/50' : 'border-slate-600'}`}>
                     <div className="space-y-1 text-center">
                         <FileIcon className="mx-auto h-12 w-12 text-slate-500" />
                         <div className="flex text-sm text-slate-400">
                             <label htmlFor="file-upload" className="relative cursor-pointer bg-slate-800 rounded-md font-medium text-blue-400 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 focus-within:ring-offset-slate-900">
-                                <span>Upload a file</span>
-                                <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} />
+                                <span>Select a folder</span>
+                                <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} {...{webkitdirectory: ""}} />
                             </label>
-                            <p className="pl-1">or drag and drop</p>
+                            <p className="pl-1">or drag and drop files</p>
                         </div>
-                        {torrentInfo.sourceFile ? (
-                            <p className="text-sm text-white pt-2">{torrentInfo.sourceFile.name}</p>
+                        {torrentInfo.sourceFiles && torrentInfo.sourceFiles.length > 0 ? (
+                            <div className="pt-2">
+                               {renderSelectedFiles()}
+                            </div>
                         ) : (
-                            <p className="text-xs text-slate-500">Any file up to your browser's limit</p>
+                            <p className="text-xs text-slate-500">Any files up to your browser's limit</p>
                         )}
                     </div>
                 </div>
