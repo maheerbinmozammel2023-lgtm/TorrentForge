@@ -5,6 +5,7 @@ import { TrashIcon } from './icons/TrashIcon';
 import { FileIcon } from './icons/FileIcon';
 import { CloudIcon } from './icons/CloudIcon';
 import { DownloadIcon } from './icons/DownloadIcon';
+import { FilePreviewModal } from './FilePreviewModal';
 
 const pieceSizes = [
   "Auto", "16 KB", "32 KB", "64 KB", "128 KB", "256 KB", "512 KB",
@@ -106,6 +107,7 @@ export const TorrentCreator: React.FC = () => {
   const [metadataError, setMetadataError] = useState<string | null>(null);
   const [cloudFileInfo, setCloudFileInfo] = useState<{ name: string; size: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
 
   const handleAddTracker = () => {
@@ -340,10 +342,21 @@ Private: ${createdTorrentData.isPrivate}
     }
 
     return (
-        <div className="text-sm text-white pt-2 text-left">
-            <p className="font-semibold truncate">{displayName}</p>
-            {files.length > 1 && <p className="text-xs text-slate-400">{files.length} files</p>}
-            <p className="text-xs text-slate-400">Total size: {(totalSize / 1024 / 1024).toFixed(2)} MB</p>
+        <div className="mt-4 p-4 bg-slate-900/70 border border-slate-700 rounded-lg text-sm">
+            <div className="flex items-center justify-between gap-4">
+                <div className="flex-grow min-w-0">
+                    <p className="font-semibold truncate text-white">{displayName}</p>
+                    {files.length > 1 && <p className="text-xs text-slate-400">{files.length} files</p>}
+                    <p className="text-xs text-slate-400">Total size: {(totalSize / 1024 / 1024).toFixed(2)} MB</p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => setIsPreviewModalOpen(true)}
+                    className="flex-shrink-0 px-3 py-1.5 border border-slate-600 text-xs font-medium rounded-md shadow-sm text-slate-300 bg-slate-700 hover:bg-slate-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 focus:ring-offset-slate-900 transition-colors"
+                >
+                    Preview
+                </button>
+            </div>
         </div>
     )
   }
@@ -362,187 +375,192 @@ Private: ${createdTorrentData.isPrivate}
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <Card title="Source File">
-        <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-900 p-1 mb-4">
-            {(Object.values(SourceType)).map(type => (
-                <button
-                    key={type}
-                    type="button"
-                    onClick={() => handleSourceTypeChange(type)}
-                    className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 flex items-center justify-center gap-2 ${torrentInfo.sourceType === type ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
-                >
-                    {type === SourceType.Local ? <FileIcon className="h-5 w-5" /> : <CloudIcon className="h-5 w-5" />}
-                    <span>{type === SourceType.Local ? 'Local File' : 'Cloud URL'}</span>
-                </button>
-            ))}
-        </div>
-        {torrentInfo.sourceType === SourceType.Local ? (
-            <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-            >
-                <label className="block text-sm font-medium text-slate-400 mb-2">Select a folder or drag & drop files</label>
-                <div className={`mt-1 flex flex-col items-center justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${isDragging ? 'border-blue-500 bg-slate-800/50' : 'border-slate-600'}`}>
-                    <div className="space-y-1 text-center">
-                        <FileIcon className="mx-auto h-12 w-12 text-slate-500" />
-                        <div className="flex text-sm text-slate-400">
-                            <label htmlFor="file-upload" className="relative cursor-pointer bg-slate-800 rounded-md font-medium text-blue-400 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 focus-within:ring-offset-slate-900">
-                                <span>Select a folder</span>
-                                <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} {...{webkitdirectory: ""}} />
-                            </label>
-                            <p className="pl-1">or drag and drop files</p>
-                        </div>
-                        {torrentInfo.sourceFiles && torrentInfo.sourceFiles.length > 0 ? (
-                            <div className="pt-2">
-                               {renderSelectedFiles()}
-                            </div>
-                        ) : (
-                            <p className="text-xs text-slate-500">Any files up to your browser's limit</p>
-                        )}
-                    </div>
-                </div>
-            </div>
-        ) : (
-            <div>
-                 <label htmlFor="source-url" className="block text-sm font-medium text-slate-400">File URL</label>
-                 <div className="mt-1 flex flex-col sm:flex-row gap-2">
-                    <input
-                        type="url"
-                        id="source-url"
-                        placeholder="https://example.com/file.zip"
-                        value={torrentInfo.sourceUrl}
-                        onChange={handleUrlChange}
-                        disabled={isFetchingMetadata}
-                        className="flex-grow bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
-                    />
-                    <button
-                        type="button"
-                        onClick={handleFetchMetadata}
-                        disabled={isFetchingMetadata || !torrentInfo.sourceUrl}
-                        className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-slate-600 hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 focus:ring-offset-slate-900 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:text-slate-400 transition-colors"
-                    >
-                        {isFetchingMetadata ? (
-                             <div className="w-5 h-5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></div>
-                        ) : (
-                           'Fetch Info'
-                        )}
-                    </button>
-                 </div>
-                 {metadataError && <p className="text-red-500 text-sm mt-2">{metadataError}</p>}
-                 {cloudFileInfo && (
-                    <div className="mt-4 p-4 bg-slate-900/70 border border-slate-700 rounded-lg flex items-center gap-4 animate-fade-in">
-                        <FileIcon className="h-8 w-8 text-blue-400 flex-shrink-0" />
-                        <div>
-                            <p className="font-semibold text-white truncate">{cloudFileInfo.name}</p>
-                            <p className="text-sm text-slate-400">{(cloudFileInfo.size / 1024 / 1024).toFixed(2)} MB</p>
-                        </div>
-                    </div>
-                 )}
-            </div>
-        )}
-      </Card>
+    <>
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <Card title="Source File">
+          <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-900 p-1 mb-4">
+              {(Object.values(SourceType)).map(type => (
+                  <button
+                      key={type}
+                      type="button"
+                      onClick={() => handleSourceTypeChange(type)}
+                      className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 flex items-center justify-center gap-2 ${torrentInfo.sourceType === type ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                  >
+                      {type === SourceType.Local ? <FileIcon className="h-5 w-5" /> : <CloudIcon className="h-5 w-5" />}
+                      <span>{type === SourceType.Local ? 'Local File' : 'Cloud URL'}</span>
+                  </button>
+              ))}
+          </div>
+          {torrentInfo.sourceType === SourceType.Local ? (
+              <div>
+                  <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                  >
+                      <label className="block text-sm font-medium text-slate-400 mb-2">Select a folder or drag & drop files</label>
+                      <div className={`mt-1 flex flex-col items-center justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${isDragging ? 'border-blue-500 bg-slate-800/50' : 'border-slate-600'}`}>
+                          <div className="space-y-1 text-center">
+                              <FileIcon className="mx-auto h-12 w-12 text-slate-500" />
+                              <div className="flex text-sm text-slate-400">
+                                  <label htmlFor="file-upload" className="relative cursor-pointer bg-slate-800 rounded-md font-medium text-blue-400 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 focus-within:ring-offset-slate-900">
+                                      <span>Select a folder</span>
+                                      <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} {...{webkitdirectory: ""}} />
+                                  </label>
+                                  <p className="pl-1">or drag and drop files</p>
+                              </div>
+                              <p className="text-xs text-slate-500">Any files up to your browser's limit</p>
+                          </div>
+                      </div>
+                  </div>
+                  {renderSelectedFiles()}
+              </div>
+          ) : (
+              <div>
+                   <label htmlFor="source-url" className="block text-sm font-medium text-slate-400">File URL</label>
+                   <div className="mt-1 flex flex-col sm:flex-row gap-2">
+                      <input
+                          type="url"
+                          id="source-url"
+                          placeholder="https://example.com/file.zip"
+                          value={torrentInfo.sourceUrl}
+                          onChange={handleUrlChange}
+                          disabled={isFetchingMetadata}
+                          className="flex-grow bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm disabled:opacity-50"
+                      />
+                      <button
+                          type="button"
+                          onClick={handleFetchMetadata}
+                          disabled={isFetchingMetadata || !torrentInfo.sourceUrl}
+                          className="inline-flex items-center justify-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-slate-600 hover:bg-slate-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-slate-500 focus:ring-offset-slate-900 disabled:bg-slate-700 disabled:cursor-not-allowed disabled:text-slate-400 transition-colors"
+                      >
+                          {isFetchingMetadata ? (
+                               <div className="w-5 h-5 border-2 border-slate-400 border-t-white rounded-full animate-spin"></div>
+                          ) : (
+                             'Fetch Info'
+                          )}
+                      </button>
+                   </div>
+                   {metadataError && <p className="text-red-500 text-sm mt-2">{metadataError}</p>}
+                   {cloudFileInfo && (
+                      <div className="mt-4 p-4 bg-slate-900/70 border border-slate-700 rounded-lg flex items-center gap-4 animate-fade-in">
+                          <FileIcon className="h-8 w-8 text-blue-400 flex-shrink-0" />
+                          <div>
+                              <p className="font-semibold text-white truncate">{cloudFileInfo.name}</p>
+                              <p className="text-sm text-slate-400">{(cloudFileInfo.size / 1024 / 1024).toFixed(2)} MB</p>
+                          </div>
+                      </div>
+                   )}
+              </div>
+          )}
+        </Card>
 
-      <Card title="Trackers">
-        <div className="space-y-2">
-            {torrentInfo.trackers.map((tracker, index) => (
-                <div key={index} className="flex items-center justify-between bg-slate-900/70 p-2 rounded-md">
-                    <p className="text-sm text-slate-300 truncate font-mono">{tracker}</p>
-                    <button type="button" onClick={() => handleRemoveTracker(index)} className="p-1 text-slate-500 hover:text-red-500 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500">
-                        <TrashIcon className="h-4 w-4" />
-                    </button>
-                </div>
-            ))}
-        </div>
-         <div className="mt-4 flex gap-2">
-            <input
-                type="text"
-                value={newTracker}
-                onChange={(e) => setNewTracker(e.target.value)}
-                placeholder="udp://tracker.example.com:1337/announce"
-                className="flex-grow bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-            />
-            <button
-                type="button"
-                onClick={handleAddTracker}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-offset-slate-900"
-            >
-               <PlusIcon className="h-5 w-5" />
-            </button>
-        </div>
-      </Card>
-      
-       <Card title="Advanced Options">
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-                <h4 className="text-base font-medium text-slate-400 mb-2">Torrent Type</h4>
-                <div className="flex flex-col sm:flex-row rounded-lg bg-slate-900 p-1 space-y-1 sm:space-y-0 sm:space-x-1">
-                    {Object.values(TorrentType).map(type => (
-                        <button
-                            key={type}
-                            type="button"
-                            onClick={() => setTorrentInfo(prev => ({...prev, torrentType: type}))}
-                            className={`flex-1 capitalize text-sm font-semibold py-2 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${torrentInfo.torrentType === type ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
-                        >
-                            {type}
-                        </button>
-                    ))}
-                </div>
-            </div>
-             <div>
-                <label htmlFor="piece-size" className="block text-base font-medium text-slate-400 mb-2">Piece Size</label>
-                <select 
-                    id="piece-size"
-                    value={torrentInfo.pieceSize}
-                    onChange={e => setTorrentInfo(prev => ({...prev, pieceSize: e.target.value}))}
-                    className="w-full bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                >
-                    {pieceSizes.map(size => <option key={size} value={size}>{size}</option>)}
-                </select>
-            </div>
-         </div>
-         <div className="mt-6 flex items-start">
-             <div className="flex items-center h-5">
-                 <input 
-                    id="is-private"
-                    type="checkbox"
-                    checked={torrentInfo.isPrivate}
-                    onChange={e => setTorrentInfo(prev => ({...prev, isPrivate: e.target.checked}))}
-                    className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-slate-600 rounded bg-slate-700"
-                 />
-             </div>
-             <div className="ml-3 text-sm">
-                 <label htmlFor="is-private" className="font-medium text-slate-300">Private Torrent</label>
-                 <p className="text-slate-500">Disables DHT and PEX, for use with private trackers only.</p>
-             </div>
-         </div>
-       </Card>
-      
-      <Card title="Comment">
+        <Card title="Trackers">
+          <div className="space-y-2">
+              {torrentInfo.trackers.map((tracker, index) => (
+                  <div key={index} className="flex items-center justify-between bg-slate-900/70 p-2 rounded-md">
+                      <p className="text-sm text-slate-300 truncate font-mono">{tracker}</p>
+                      <button type="button" onClick={() => handleRemoveTracker(index)} className="p-1 text-slate-500 hover:text-red-500 rounded-full focus:outline-none focus:ring-2 focus:ring-red-500">
+                          <TrashIcon className="h-4 w-4" />
+                      </button>
+                  </div>
+              ))}
+          </div>
+           <div className="mt-4 flex gap-2">
+              <input
+                  type="text"
+                  value={newTracker}
+                  onChange={(e) => setNewTracker(e.target.value)}
+                  placeholder="udp://tracker.example.com:1337/announce"
+                  className="flex-grow bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+              />
+              <button
+                  type="button"
+                  onClick={handleAddTracker}
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-offset-slate-900"
+              >
+                 <PlusIcon className="h-5 w-5" />
+              </button>
+          </div>
+        </Card>
+        
+         <Card title="Advanced Options">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                  <h4 className="text-base font-medium text-slate-400 mb-2">Torrent Type</h4>
+                  <div className="flex flex-col sm:flex-row rounded-lg bg-slate-900 p-1 space-y-1 sm:space-y-0 sm:space-x-1">
+                      {Object.values(TorrentType).map(type => (
+                          <button
+                              key={type}
+                              type="button"
+                              onClick={() => setTorrentInfo(prev => ({...prev, torrentType: type}))}
+                              className={`flex-1 capitalize text-sm font-semibold py-2 rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 ${torrentInfo.torrentType === type ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
+                          >
+                              {type}
+                          </button>
+                      ))}
+                  </div>
+              </div>
+               <div>
+                  <label htmlFor="piece-size" className="block text-base font-medium text-slate-400 mb-2">Piece Size</label>
+                  <select 
+                      id="piece-size"
+                      value={torrentInfo.pieceSize}
+                      onChange={e => setTorrentInfo(prev => ({...prev, pieceSize: e.target.value}))}
+                      className="w-full bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                  >
+                      {pieceSizes.map(size => <option key={size} value={size}>{size}</option>)}
+                  </select>
+              </div>
+           </div>
+           <div className="mt-6 flex items-start">
+               <div className="flex items-center h-5">
+                   <input 
+                      id="is-private"
+                      type="checkbox"
+                      checked={torrentInfo.isPrivate}
+                      onChange={e => setTorrentInfo(prev => ({...prev, isPrivate: e.target.checked}))}
+                      className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-slate-600 rounded bg-slate-700"
+                   />
+               </div>
+               <div className="ml-3 text-sm">
+                   <label htmlFor="is-private" className="font-medium text-slate-300">Private Torrent</label>
+                   <p className="text-slate-500">Disables DHT and PEX, for use with private trackers only.</p>
+               </div>
+           </div>
+         </Card>
+        
+        <Card title="Comment">
+          <div>
+              <label htmlFor="comment" className="block text-base font-medium text-slate-400 mb-2 sr-only">Comment</label>
+              <textarea
+                  id="comment"
+                  rows={3}
+                  value={torrentInfo.comment}
+                  onChange={e => setTorrentInfo(prev => ({...prev, comment: e.target.value}))}
+                  placeholder="Add an optional comment to your torrent"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm resize-y"
+              />
+          </div>
+        </Card>
+
         <div>
-            <label htmlFor="comment" className="block text-base font-medium text-slate-400 mb-2 sr-only">Comment</label>
-            <textarea
-                id="comment"
-                rows={3}
-                value={torrentInfo.comment}
-                onChange={e => setTorrentInfo(prev => ({...prev, comment: e.target.value}))}
-                placeholder="Add an optional comment to your torrent"
-                className="w-full bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm resize-y"
-            />
+          {error && <p className="text-red-500 text-center text-sm mb-4">{error}</p>}
+          <button
+            type="submit"
+            disabled={!isFormValid || isLoading}
+            className="w-full inline-flex items-center justify-center px-6 py-4 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-offset-slate-900 transition-all duration-200 transform hover:scale-105 disabled:bg-blue-800/50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:text-slate-400"
+          >
+            Create Torrent
+          </button>
         </div>
-      </Card>
-
-      <div>
-        {error && <p className="text-red-500 text-center text-sm mb-4">{error}</p>}
-        <button
-          type="submit"
-          disabled={!isFormValid || isLoading}
-          className="w-full inline-flex items-center justify-center px-6 py-4 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 focus:ring-offset-slate-900 transition-all duration-200 transform hover:scale-105 disabled:bg-blue-800/50 disabled:cursor-not-allowed disabled:hover:scale-100 disabled:text-slate-400"
-        >
-          Create Torrent
-        </button>
-      </div>
-    </form>
+      </form>
+      {isPreviewModalOpen && torrentInfo.sourceFiles && (
+          <FilePreviewModal
+              files={torrentInfo.sourceFiles}
+              onClose={() => setIsPreviewModalOpen(false)}
+          />
+      )}
+    </>
   );
 };
