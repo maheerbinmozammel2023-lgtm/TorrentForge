@@ -473,7 +473,7 @@ Private: ${createdTorrentData.isPrivate}
         </div>
       </Card>
       
-       <Card title="Options">
+       <Card title="Advanced Options">
          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
                 <h4 className="text-base font-medium text-slate-400 mb-2">Torrent Type</h4>
@@ -517,8 +517,11 @@ Private: ${createdTorrentData.isPrivate}
                  <p className="text-slate-500">Disables DHT and PEX, for use with private trackers only.</p>
              </div>
          </div>
-         <div className="mt-6">
-            <label htmlFor="comment" className="block text-base font-medium text-slate-400 mb-2">Comment</label>
+       </Card>
+      
+      <Card title="Comment">
+        <div>
+            <label htmlFor="comment" className="block text-base font-medium text-slate-400 mb-2 sr-only">Comment</label>
             <textarea
                 id="comment"
                 rows={3}
@@ -527,8 +530,8 @@ Private: ${createdTorrentData.isPrivate}
                 placeholder="Add an optional comment to your torrent"
                 className="w-full bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm resize-y"
             />
-         </div>
-       </Card>
+        </div>
+      </Card>
 
       <div>
         {error && <p className="text-red-500 text-center text-sm mb-4">{error}</p>}
