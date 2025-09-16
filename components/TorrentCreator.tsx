@@ -1,4 +1,7 @@
 import React, { useState, useCallback } from 'react';
+import createTorrent from 'create-torrent';
+import parseTorrent from 'parse-torrent';
+import { Buffer } from 'buffer';
 import { TorrentType, SourceType, TorrentInfo, CreatedTorrentData } from '../types';
 import { PlusIcon } from './icons/PlusIcon';
 import { TrashIcon } from './icons/TrashIcon';
@@ -89,6 +92,19 @@ const ResultDisplay: React.FC<{ data: CreatedTorrentData; onDownload: () => void
     );
 };
 
+const parsePieceSize = (sizeStr: string): number | undefined => {
+    if (sizeStr === 'Auto') {
+        return undefined;
+    }
+    const [value, unit] = sizeStr.split(' ');
+    const numValue = parseInt(value, 10);
+    switch (unit) {
+        case 'KB': return numValue * 1024;
+        case 'MB': return numValue * 1024 * 1024;
+        default: return undefined;
+    }
+};
+
 export const TorrentCreator: React.FC = () => {
   const [torrentInfo, setTorrentInfo] = useState<TorrentInfo>({
     sourceType: SourceType.Local,
@@ -108,6 +124,8 @@ export const TorrentCreator: React.FC = () => {
   const [cloudFileInfo, setCloudFileInfo] = useState<{ name: string; size: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [torrentFile, setTorrentFile] = useState<Buffer | null>(null);
+  const [creationProgress, setCreationProgress] = useState<number | null>(null);
 
 
   const handleAddTracker = () => {
@@ -205,99 +223,126 @@ export const TorrentCreator: React.FC = () => {
 
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    // Simulate success or failure for demonstration
     if (torrentInfo.sourceUrl.includes("fail")) {
         setMetadataError("Could not fetch file metadata. The URL might be incorrect or the server is not accessible.");
     } else {
         const fileName = torrentInfo.sourceUrl.substring(torrentInfo.sourceUrl.lastIndexOf('/') + 1) || "file_from_url.dat";
-        const fileSize = Math.floor(Math.random() * 1e9) + 1e6; // Random size for demo
+        const fileSize = Math.floor(Math.random() * 1e9) + 1e6;
         setCloudFileInfo({ name: fileName, size: fileSize });
     }
     setIsFetchingMetadata(false);
   }, [torrentInfo.sourceUrl]);
   
   const createMockTorrentData = useCallback((): CreatedTorrentData => {
-      const isLocal = torrentInfo.sourceType === SourceType.Local;
-      let fileName = "unknown_file";
-      let fileSizeNum = 0;
-
-      if (isLocal && torrentInfo.sourceFiles && torrentInfo.sourceFiles.length > 0) {
-          const files = torrentInfo.sourceFiles;
-          fileSizeNum = files.reduce((sum, f) => sum + f.size, 0);
-
-          if (files.length === 1) {
-              fileName = files[0].name;
-          } else {
-              const firstPath = files[0].webkitRelativePath;
-              if (firstPath) {
-                  fileName = firstPath.split('/')[0];
-              } else {
-                  fileName = `${files.length} files`;
-              }
-          }
-      } else if (!isLocal && cloudFileInfo) {
-          fileName = cloudFileInfo.name;
-          fileSizeNum = cloudFileInfo.size;
-      }
+      const fileName = cloudFileInfo?.name || "unknown_file";
+      const fileSizeNum = cloudFileInfo?.size || 0;
       
       const generateInfoHash = () => [...Array(40)].map(() => Math.floor(Math.random() * 16).toString(16)).join('');
 
       return {
           ...torrentInfo,
-          fileName: fileName,
+          fileName,
           fileSize: fileSizeNum ? (fileSizeNum / 1024 / 1024).toFixed(2) + ' MB' : 'Unknown',
           infoHashV1: [TorrentType.V1, TorrentType.Hybrid].includes(torrentInfo.torrentType) ? generateInfoHash() : undefined,
           infoHashV2: [TorrentType.V2, TorrentType.Hybrid].includes(torrentInfo.torrentType) ? generateInfoHash() : undefined,
           creationDate: new Date().toISOString(),
-          totalPieces: fileSizeNum ? Math.ceil(fileSizeNum / (1024 * parseInt(torrentInfo.pieceSize) || 1024*512)) : 0, // Approximate
+          totalPieces: fileSizeNum ? Math.ceil(fileSizeNum / (1024 * parseInt(torrentInfo.pieceSize) || 1024*512)) : 0,
       };
   }, [torrentInfo, cloudFileInfo]);
 
   const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
+
     if (torrentInfo.sourceType === SourceType.Local && (!torrentInfo.sourceFiles || torrentInfo.sourceFiles.length === 0)) {
         setError('Please select one or more files, or a folder.');
         return;
     }
     if (torrentInfo.sourceType === SourceType.Cloud) {
-        if (!torrentInfo.sourceUrl) {
-            setError('Please enter a file URL.');
+        if (!torrentInfo.sourceUrl || !cloudFileInfo) {
+            setError('Please enter a URL and fetch its information first.');
             return;
         }
-        if (!cloudFileInfo) {
-            setError('Please fetch file information from the URL first.');
-            return;
-        }
+        // Cloud is a mock
+        setError(null);
+        setIsLoading(true);
+        setCreatedTorrentData(null);
+        setTorrentFile(null);
+        setTimeout(() => {
+            setCreatedTorrentData(createMockTorrentData());
+            setIsLoading(false);
+        }, 2000);
+        return;
     }
+
+    // Real torrent creation for local files
     setError(null);
     setIsLoading(true);
     setCreatedTorrentData(null);
-    
-    setTimeout(() => {
-        const mockData = createMockTorrentData();
-        setCreatedTorrentData(mockData);
-        setIsLoading(false);
-    }, 2500);
+    setTorrentFile(null);
+    setCreationProgress(0);
+
+    const files = torrentInfo.sourceFiles!;
+    const name = files.length > 1
+        ? (files[0].webkitRelativePath?.split('/')[0] || `${files.length} files`)
+        : files[0].name;
+
+    const opts: any = {
+      name,
+      comment: torrentInfo.comment,
+      private: torrentInfo.isPrivate,
+      announce: torrentInfo.trackers,
+      pieceLength: parsePieceSize(torrentInfo.pieceSize),
+    };
+
+    if (torrentInfo.torrentType === TorrentType.V1) opts.skipV2 = true;
+    if (torrentInfo.torrentType === TorrentType.V2) opts.skipV1 = true;
+
+    const creator = createTorrent(files, opts, (err, torrent) => {
+        if (err) {
+            console.error(err);
+            setError(`Failed to create torrent file: ${err.message}`);
+            setIsLoading(false);
+            setCreationProgress(null);
+            return;
+        }
+        
+        const parsed = parseTorrent(torrent) as any;
+        const totalSize = parsed.length;
+        const actualPieceSize = torrentInfo.pieceSize === 'Auto'
+            ? `${(parsed.pieceLength / 1024).toFixed(0)} KB`
+            : torrentInfo.pieceSize;
+
+        const data: CreatedTorrentData = {
+          ...torrentInfo,
+          fileName: parsed.name,
+          fileSize: (totalSize / 1024 / 1024).toFixed(2) + ' MB',
+          infoHashV1: parsed.infoHash,
+          infoHashV2: parsed.infoHashV2,
+          creationDate: (parsed.created ? new Date(parsed.created) : new Date()).toISOString(),
+          totalPieces: parsed.pieces.length,
+          pieceSize: actualPieceSize,
+        };
+        
+        setTorrentFile(torrent);
+        setCreatedTorrentData(data);
+        
+        setCreationProgress(100);
+        setTimeout(() => {
+            setIsLoading(false);
+            setCreationProgress(null);
+        }, 300);
+    });
+
+    creator.on('progress', (data) => {
+        setCreationProgress(data.progress);
+    });
+
   }, [torrentInfo, cloudFileInfo, createMockTorrentData]);
   
   const handleDownload = () => {
-    if (!createdTorrentData) return;
-    const content = `
-[TORRENTFORGE MOCK FILE]
+    if (!createdTorrentData || !torrentFile) return;
 
-File Name: ${createdTorrentData.fileName}
-File Size: ${createdTorrentData.fileSize}
-Torrent Type: ${createdTorrentData.torrentType}
-${createdTorrentData.infoHashV1 ? `Info Hash v1: ${createdTorrentData.infoHashV1}` : ''}
-${createdTorrentData.infoHashV2 ? `Info Hash v2: ${createdTorrentData.infoHashV2}` : ''}
-
-Trackers:
-${createdTorrentData.trackers.join('\n')}
-
-Comment: ${createdTorrentData.comment || 'N/A'}
-Private: ${createdTorrentData.isPrivate}
-    `;
-    const blob = new Blob([content.trim()], { type: 'text/plain' });
+    const blob = new Blob([torrentFile], { type: 'application/x-bittorrent' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -310,6 +355,7 @@ Private: ${createdTorrentData.isPrivate}
 
   const handleReset = () => {
     setCreatedTorrentData(null);
+    setTorrentFile(null);
     setTorrentInfo(prev => ({
         ...prev,
         sourceFiles: undefined,
@@ -317,6 +363,7 @@ Private: ${createdTorrentData.isPrivate}
     }));
     setCloudFileInfo(null);
     setMetadataError(null);
+    setError(null);
   }
 
   const isFormValid =
@@ -363,9 +410,21 @@ Private: ${createdTorrentData.isPrivate}
 
   if (isLoading) {
     return (
-        <div className="flex flex-col items-center justify-center p-10 bg-slate-800/50 border border-slate-700 rounded-lg">
-            <div className="w-16 h-16 border-4 border-blue-500 border-dashed rounded-full animate-spin"></div>
-            <p className="mt-4 text-lg text-white">Forging your torrent...</p>
+        <div className="flex flex-col items-center justify-center p-10 bg-slate-800/50 border border-slate-700 rounded-lg min-h-[120px]">
+            {creationProgress !== null ? (
+                 <div className="w-full">
+                    <p className="text-lg text-white text-center mb-2">Forging your torrent...</p>
+                    <div className="w-full bg-slate-700 rounded-full h-2.5">
+                        <div className="bg-blue-600 h-2.5 rounded-full transition-all duration-300 ease-linear" style={{ width: `${creationProgress}%` }}></div>
+                    </div>
+                    <p className="text-center text-slate-300 mt-2 font-mono">{Math.round(creationProgress)}%</p>
+                 </div>
+            ) : (
+                <>
+                    <div className="w-16 h-16 border-4 border-blue-500 border-dashed rounded-full animate-spin"></div>
+                    <p className="mt-4 text-lg text-white">Initializing...</p>
+                </>
+            )}
         </div>
     )
   }
@@ -377,7 +436,7 @@ Private: ${createdTorrentData.isPrivate}
   return (
     <>
       <form onSubmit={handleSubmit} className="space-y-6">
-        <Card title="Source File">
+        <Card title="Source Content">
           <div className="grid grid-cols-2 gap-2 rounded-lg bg-slate-900 p-1 mb-4">
               {(Object.values(SourceType)).map(type => (
                   <button
@@ -387,7 +446,7 @@ Private: ${createdTorrentData.isPrivate}
                       className={`px-4 py-2 text-sm font-semibold rounded-md transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900 flex items-center justify-center gap-2 ${torrentInfo.sourceType === type ? 'bg-blue-600 text-white' : 'text-slate-300 hover:bg-slate-700'}`}
                   >
                       {type === SourceType.Local ? <FileIcon className="h-5 w-5" /> : <CloudIcon className="h-5 w-5" />}
-                      <span>{type === SourceType.Local ? 'Local File' : 'Cloud URL'}</span>
+                      <span>{type === SourceType.Local ? 'Local Files' : 'Cloud URL'}</span>
                   </button>
               ))}
           </div>
@@ -398,18 +457,22 @@ Private: ${createdTorrentData.isPrivate}
                       onDragLeave={handleDragLeave}
                       onDrop={handleDrop}
                   >
-                      <label className="block text-sm font-medium text-slate-400 mb-2">Select a folder or drag & drop files</label>
+                      <label htmlFor="file-upload-folder" className="block text-sm font-medium text-slate-400 mb-2">Select files or a folder</label>
                       <div className={`mt-1 flex flex-col items-center justify-center px-6 pt-5 pb-6 border-2 border-dashed rounded-md transition-colors ${isDragging ? 'border-blue-500 bg-slate-800/50' : 'border-slate-600'}`}>
                           <div className="space-y-1 text-center">
                               <FileIcon className="mx-auto h-12 w-12 text-slate-500" />
                               <div className="flex text-sm text-slate-400">
-                                  <label htmlFor="file-upload" className="relative cursor-pointer bg-slate-800 rounded-md font-medium text-blue-400 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 focus-within:ring-offset-slate-900">
+                                  <label htmlFor="file-upload-folder" className="relative cursor-pointer bg-slate-800 rounded-md font-medium text-blue-400 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 focus-within:ring-offset-slate-900">
                                       <span>Select a folder</span>
-                                      <input id="file-upload" name="file-upload" type="file" className="sr-only" onChange={handleFileChange} {...{webkitdirectory: ""}} />
+                                      <input id="file-upload-folder" type="file" className="sr-only" onChange={handleFileChange} {...{webkitdirectory: ""}} />
                                   </label>
-                                  <p className="pl-1">or drag and drop files</p>
+                                  <span className="px-1">or</span>
+                                  <label htmlFor="file-upload-files" className="relative cursor-pointer bg-slate-800 rounded-md font-medium text-blue-400 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500 focus-within:ring-offset-slate-900">
+                                      <span>files</span>
+                                      <input id="file-upload-files" type="file" className="sr-only" onChange={handleFileChange} multiple />
+                                  </label>
                               </div>
-                              <p className="text-xs text-slate-500">Any files up to your browser's limit</p>
+                              <p className="text-xs text-slate-500">or drag and drop</p>
                           </div>
                       </div>
                   </div>
@@ -417,7 +480,7 @@ Private: ${createdTorrentData.isPrivate}
               </div>
           ) : (
               <div>
-                   <label htmlFor="source-url" className="block text-sm font-medium text-slate-400">File URL</label>
+                   <label htmlFor="source-url" className="block text-sm font-medium text-slate-400">File URL (Demonstration)</label>
                    <div className="mt-1 flex flex-col sm:flex-row gap-2">
                       <input
                           type="url"
@@ -484,7 +547,7 @@ Private: ${createdTorrentData.isPrivate}
           </div>
         </Card>
         
-         <Card title="Advanced Options">
+         <Card title="Options">
            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                   <h4 className="text-base font-medium text-slate-400 mb-2">Torrent Type</h4>
@@ -528,22 +591,19 @@ Private: ${createdTorrentData.isPrivate}
                    <p className="text-slate-500">Disables DHT and PEX, for use with private trackers only.</p>
                </div>
            </div>
-         </Card>
-        
-        <Card title="Comment">
-          <div>
-              <label htmlFor="comment" className="block text-base font-medium text-slate-400 mb-2 sr-only">Comment</label>
+           <div className="mt-6">
+              <label htmlFor="comment" className="block text-base font-medium text-slate-400 mb-2">Comment</label>
               <textarea
                   id="comment"
-                  rows={3}
+                  rows={2}
                   value={torrentInfo.comment}
                   onChange={e => setTorrentInfo(prev => ({...prev, comment: e.target.value}))}
                   placeholder="Add an optional comment to your torrent"
                   className="w-full bg-slate-900 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm resize-y"
               />
           </div>
-        </Card>
-
+         </Card>
+        
         <div>
           {error && <p className="text-red-500 text-center text-sm mb-4">{error}</p>}
           <button

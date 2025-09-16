@@ -10,10 +10,14 @@
   },
   "dependencies": {
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "create-torrent": "5.0.1",
+    "parse-torrent": "9.1.5",
+    "buffer": "6.0.3"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@vitejs/plugin-react": "^5.0.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

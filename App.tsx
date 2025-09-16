@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { TorrentCreator } from './components/TorrentCreator';
 
@@ -21,7 +20,7 @@ const App: React.FC = () => {
 
         <footer className="text-center mt-12 text-slate-500 text-sm">
           <p>&copy; {new Date().getFullYear()} TorrentForge. All Rights Reserved.</p>
-          <p className="mt-1">This is a UI demonstration. No real torrent files are generated.</p>
+          <p className="mt-1">Torrent creation from local files is fully functional. Cloud URL is for demonstration purposes.</p>
         </footer>
       </div>
     </div>
